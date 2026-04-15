@@ -8,3 +8,9 @@ units:
     type: diag
     node: external_command_checker
     name: remote_command
+
+  - path: /
+    type: diag
+    node: rosbag2_recorder
+    name: /autoware/modes/stop
+
