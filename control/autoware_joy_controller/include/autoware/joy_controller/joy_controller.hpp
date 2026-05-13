@@ -22,11 +22,13 @@
 
 #include <autoware_control_msgs/msg/control.hpp>
 #include <autoware_vehicle_msgs/msg/engage.hpp>
+#include <autoware_vehicle_msgs/msg/gear_command.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <tier4_control_msgs/msg/gate_mode.hpp>
 #include <tier4_external_api_msgs/msg/control_command_stamped.hpp>
+#include <tier4_vehicle_msgs/msg/vehicle_emergency_stamped.hpp>
 #include <tier4_external_api_msgs/msg/gear_shift_stamped.hpp>
 #include <tier4_external_api_msgs/msg/heartbeat.hpp>
 #include <tier4_external_api_msgs/msg/turn_signal_stamped.hpp>
@@ -89,6 +91,9 @@ private:
   rclcpp::Publisher<tier4_external_api_msgs::msg::Heartbeat>::SharedPtr pub_heartbeat_;
   rclcpp::Publisher<tier4_control_msgs::msg::GateMode>::SharedPtr pub_gate_mode_;
   rclcpp::Publisher<autoware_vehicle_msgs::msg::Engage>::SharedPtr pub_vehicle_engage_;
+  rclcpp::Publisher<tier4_vehicle_msgs::msg::VehicleEmergencyStamped>::SharedPtr
+    pub_emergency_cmd_;
+  rclcpp::Publisher<autoware_vehicle_msgs::msg::GearCommand>::SharedPtr pub_gear_cmd_;
 
   void publishControlCommand();
   void publishExternalControlCommand();
@@ -96,6 +101,8 @@ private:
   void publishTurnSignal();
   void publishGateMode();
   void publishHeartbeat();
+  void publishEmergencyCmd();
+  void publishGearCmd();
   void publishAutowareEngage();
   void publishVehicleEngage();
   void sendEmergencyRequest(bool emergency);

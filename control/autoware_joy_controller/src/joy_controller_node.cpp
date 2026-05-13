@@ -20,6 +20,7 @@
 
 #include <autoware/qos_utils/qos_compatibility.hpp>
 #include <tier4_api_utils/tier4_api_utils.hpp>
+#include <tier4_vehicle_msgs/msg/vehicle_emergency_stamped.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -267,6 +268,8 @@ void AutowareJoyControllerNode::onTimer()
   publishControlCommand();
   publishExternalControlCommand();
   publishHeartbeat();
+  publishEmergencyCmd();
+  publishGearCmd();
 }
 
 void AutowareJoyControllerNode::publishControlCommand()
@@ -347,6 +350,7 @@ void AutowareJoyControllerNode::publishShift()
 
   pub_shift_->publish(gear_shift);
   prev_shift_ = gear_shift.gear_shift.data;
+  publishGearCmd();
 }
 
 void AutowareJoyControllerNode::publishTurnSignal()
@@ -394,6 +398,46 @@ void AutowareJoyControllerNode::publishHeartbeat()
   tier4_external_api_msgs::msg::Heartbeat heartbeat;
   heartbeat.stamp = this->now();
   pub_heartbeat_->publish(heartbeat);
+}
+
+void AutowareJoyControllerNode::publishEmergencyCmd()
+{
+  tier4_vehicle_msgs::msg::VehicleEmergencyStamped emergency_cmd;
+  emergency_cmd.stamp = this->now();
+  emergency_cmd.emergency = false;
+  pub_emergency_cmd_->publish(emergency_cmd);
+}
+
+void AutowareJoyControllerNode::publishGearCmd()
+{
+  using GearShift = tier4_external_api_msgs::msg::GearShift;
+  using GearCommand = autoware_vehicle_msgs::msg::GearCommand;
+
+  autoware_vehicle_msgs::msg::GearCommand gear_cmd;
+  gear_cmd.stamp = this->now();
+
+  switch (prev_shift_) {
+    case GearShift::PARKING:
+      gear_cmd.command = GearCommand::PARK;
+      break;
+    case GearShift::REVERSE:
+      gear_cmd.command = GearCommand::REVERSE;
+      break;
+    case GearShift::NEUTRAL:
+      gear_cmd.command = GearCommand::NEUTRAL;
+      break;
+    case GearShift::DRIVE:
+      gear_cmd.command = GearCommand::DRIVE;
+      break;
+    case GearShift::LOW:
+      gear_cmd.command = GearCommand::LOW;
+      break;
+    default:
+      gear_cmd.command = GearCommand::DRIVE;
+      break;
+  }
+
+  pub_gear_cmd_->publish(gear_cmd);
 }
 
 void AutowareJoyControllerNode::sendEmergencyRequest(bool emergency)
@@ -496,8 +540,9 @@ AutowareJoyControllerNode::AutowareJoyControllerNode(const rclcpp::NodeOptions &
   }
 
   // Publisher
-  pub_control_command_ =
-    this->create_publisher<autoware_control_msgs::msg::Control>("output/control_command", 1);
+  pub_control_command_ = this->create_publisher<autoware_control_msgs::msg::Control>(
+    "/control/command/control_cmd",
+    rclcpp::QoS(1).reliable().transient_local());
   pub_external_control_command_ =
     this->create_publisher<tier4_external_api_msgs::msg::ControlCommandStamped>(
       "output/external_control_command", 1);
@@ -510,6 +555,12 @@ AutowareJoyControllerNode::AutowareJoyControllerNode(const rclcpp::NodeOptions &
     this->create_publisher<tier4_external_api_msgs::msg::Heartbeat>("output/heartbeat", 1);
   pub_vehicle_engage_ =
     this->create_publisher<autoware_vehicle_msgs::msg::Engage>("output/vehicle_engage", 1);
+  pub_emergency_cmd_ =
+    this->create_publisher<tier4_vehicle_msgs::msg::VehicleEmergencyStamped>(
+      "/control/command/emergency_cmd", rclcpp::QoS(1).transient_local());
+  pub_gear_cmd_ =
+    this->create_publisher<autoware_vehicle_msgs::msg::GearCommand>(
+      "/control/command/gear_cmd", 1);
 
   // Service Client
   client_emergency_stop_ = this->create_client<tier4_external_api_msgs::srv::SetEmergency>(
