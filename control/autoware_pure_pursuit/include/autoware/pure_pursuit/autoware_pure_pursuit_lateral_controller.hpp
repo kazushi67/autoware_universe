@@ -171,6 +171,8 @@ private:
 
   void averageFilterTrajectory(autoware_planning_msgs::msg::Trajectory & u);
 
+  Trajectory transformTrajectoryToMapFrame(const Trajectory & trajectory);
+
   // Debug
   mutable DebugData debug_data_;
 };

@@ -34,6 +34,8 @@
 #include "autoware/pure_pursuit/util/planning_utils.hpp"
 #include "autoware/pure_pursuit/util/tf_utils.hpp"
 
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
 #include <autoware_utils/geometry/geometry.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info_utils.hpp>
 
@@ -275,6 +277,25 @@ boost::optional<Trajectory> PurePursuitLateralController::generatePredictedTraje
     output_tp_array_, current_odometry_.pose.pose, 3.0, M_PI_4);
 
   if (!closest_idx_result) {
+    if (!output_tp_array_.empty()) {
+      const auto & pose = current_odometry_.pose.pose;
+      const auto nearest_idx =
+        autoware::motion_utils::findNearestIndex(output_tp_array_, pose.position);
+      const auto & nearest_pose = output_tp_array_.at(nearest_idx).pose;
+      const double dx = pose.position.x - nearest_pose.position.x;
+      const double dy = pose.position.y - nearest_pose.position.y;
+      const double dist = std::hypot(dx, dy);
+      const double vehicle_yaw = tf2::getYaw(pose.orientation);
+      const double traj_yaw = tf2::getYaw(nearest_pose.orientation);
+      double yaw_diff = std::abs(vehicle_yaw - traj_yaw);
+      while (yaw_diff > M_PI) yaw_diff -= 2.0 * M_PI;
+      yaw_diff = std::abs(yaw_diff);
+      RCLCPP_ERROR(
+        logger_,
+        "generatePredictedTrajectory: cannot find nearest point: dist=%.3f[m] (limit=3.0m), "
+        "yaw_diff=%.1f[deg] (limit=45deg)",
+        dist, yaw_diff * 180.0 / M_PI);
+    }
     return boost::none;
   }
 
@@ -340,13 +361,44 @@ bool PurePursuitLateralController::isReady([[maybe_unused]] const InputData & in
   return true;
 }
 
+Trajectory PurePursuitLateralController::transformTrajectoryToMapFrame(
+  const Trajectory & trajectory)
+{
+  const auto & frame = trajectory.header.frame_id;
+  if (frame == "map" || frame.empty()) {
+    return trajectory;
+  }
+
+  geometry_msgs::msg::TransformStamped tf_stamped;
+  try {
+    tf_stamped = tf_buffer_.lookupTransform("map", frame, tf2::TimePointZero);
+  } catch (const tf2::TransformException & ex) {
+    RCLCPP_ERROR(
+      logger_, "Failed to transform trajectory from '%s' to 'map': %s", frame.c_str(), ex.what());
+    return trajectory;
+  }
+
+  Trajectory transformed = trajectory;
+  transformed.header.frame_id = "map";
+  for (auto & point : transformed.points) {
+    geometry_msgs::msg::PoseStamped pose_in, pose_out;
+    pose_in.pose = point.pose;
+    tf2::doTransform(pose_in, pose_out, tf_stamped);
+    point.pose = pose_out.pose;
+  }
+  return transformed;
+}
+
 LateralOutput PurePursuitLateralController::run(const InputData & input_data)
 {
   current_pose_ = input_data.current_odometry.pose.pose;
-  trajectory_ = input_data.current_trajectory;
+  trajectory_ = transformTrajectoryToMapFrame(input_data.current_trajectory);
   current_odometry_ = input_data.current_odometry;
   current_steering_ = input_data.current_steering;
 
+  if (!trajectory_.points.empty()) {
+    trajectory_.points.erase(trajectory_.points.begin());
+  }
   setResampledTrajectory();
   if (param_.enable_path_smoothing) {
     averageFilterTrajectory(*trajectory_resampled_);
@@ -416,6 +468,8 @@ void PurePursuitLateralController::publishDebugMarker() const
   marker_array.markers.push_back(createNextTargetMarker(debug_data_.next_target));
   marker_array.markers.push_back(
     createTrajectoryCircleMarker(debug_data_.next_target, current_odometry_.pose.pose));
+
+  pub_debug_marker_->publish(marker_array);
 }
 
 boost::optional<PpOutput> PurePursuitLateralController::calcTargetCurvature(
@@ -432,7 +486,31 @@ boost::optional<PpOutput> PurePursuitLateralController::calcTargetCurvature(
   const auto closest_idx_result =
     autoware::motion_utils::findNearestIndex(output_tp_array_, pose, 3.0, M_PI_4);
   if (!closest_idx_result) {
-    RCLCPP_ERROR(logger_, "cannot find closest waypoint");
+    if (output_tp_array_.empty()) {
+      RCLCPP_ERROR(logger_, "cannot find closest waypoint: trajectory is empty");
+    } else {
+      // 制約なしで最近傍点を探して距離・角度差を表示
+      const auto nearest_idx =
+        autoware::motion_utils::findNearestIndex(output_tp_array_, pose.position);
+      const auto & nearest_pose = output_tp_array_.at(nearest_idx).pose;
+      const double dx = pose.position.x - nearest_pose.position.x;
+      const double dy = pose.position.y - nearest_pose.position.y;
+      const double dist = std::hypot(dx, dy);
+      const double vehicle_yaw = tf2::getYaw(pose.orientation);
+      const double traj_yaw = tf2::getYaw(nearest_pose.orientation);
+      double yaw_diff = std::abs(vehicle_yaw - traj_yaw);
+      // [-π, π] に正規化
+      while (yaw_diff > M_PI) yaw_diff -= 2.0 * M_PI;
+      yaw_diff = std::abs(yaw_diff);
+      RCLCPP_ERROR(
+        logger_,
+        "cannot find closest waypoint: nearest dist=%.3f[m] (limit=3.0m), "
+        "yaw_diff=%.1f[deg] (limit=45deg), "
+        "vehicle(%.2f, %.2f, yaw=%.1fdeg) nearest_traj(%.2f, %.2f, yaw=%.1fdeg)",
+        dist, yaw_diff * 180.0 / M_PI,
+        pose.position.x, pose.position.y, vehicle_yaw * 180.0 / M_PI,
+        nearest_pose.position.x, nearest_pose.position.y, traj_yaw * 180.0 / M_PI);
+    }
     return {};
   }
 

@@ -47,7 +47,7 @@ namespace autoware::pure_pursuit
 class PurePursuit
 {
 public:
-  PurePursuit() : lookahead_distance_(0.0), closest_thr_dist_(3.0), closest_thr_ang_(M_PI / 4) {}
+  PurePursuit() : lookahead_distance_(0.0), closest_thr_dist_(4.0), closest_thr_ang_(M_PI / 4) {}
   ~PurePursuit() = default;
 
   rclcpp::Logger logger = rclcpp::get_logger("pure_pursuit");
