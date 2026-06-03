@@ -1,0 +1,11 @@
+<launch>
+  <node
+    pkg="autoware_trajectory_to_map_frame_converter"
+    exec="autoware_trajectory_to_map_frame_converter_exe"
+    name="trajectory_to_map_frame_converter"
+    output="screen"
+  >
+    <remap from="~/input/trajectory"  to="/alpamayo/predicted_trajectory"/>
+    <remap from="~/output/trajectory" to="/alpamayo/transformed_predicted_trajectory"/>
+  </node>
+</launch>
